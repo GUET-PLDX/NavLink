@@ -99,15 +99,7 @@ struct [[gnu::packed]] ChassisTarget {
   float vx_mps{};      /* chassis-frame velocity, m/s */
   float vy_mps{};      /* chassis-frame velocity, m/s */
   float wz_rad_s{};    /* yaw rate, rad/s */
-  float current_yaw{}; /* legacy telemetry; unused by this receiver */
-  float current_vx{};
-  float current_vy{};
-  float current_wz{};
-  float fx{}; /* legacy force fields must be zero */
-  float fy{};
-  float mz{};
   bool use_speed_control{};
-  float delta_yaw{};
 };
 
 struct [[gnu::packed]] BehaviorData {
@@ -209,7 +201,7 @@ struct [[gnu::packed]] GimbalFeedback {
 };
 
 static_assert(std::endian::native == std::endian::little);
-static_assert(sizeof(ChassisTarget) == 45U);
+static_assert(sizeof(ChassisTarget) == 13U);
 static_assert(sizeof(BehaviorData) == 26U);
 static_assert(sizeof(TeamInfo::AllyRobotStatus) == 11U);
 static_assert(sizeof(TeamInfo) == 48U);
@@ -221,8 +213,7 @@ static_assert(sizeof(RadarInfo) == 59U);
 static_assert(sizeof(GimbalFeedback) == 28U);
 static_assert(sizeof(GimbalFeedbackV1) == 12U);
 static_assert(offsetof(ChassisTarget, wz_rad_s) == 8U);
-static_assert(offsetof(ChassisTarget, use_speed_control) == 40U);
-static_assert(offsetof(ChassisTarget, delta_yaw) == 41U);
+static_assert(offsetof(ChassisTarget, use_speed_control) == 12U);
 static_assert(offsetof(BehaviorData, ammo_purchase_request) == 11U);
 static_assert(offsetof(BehaviorData, use_gyro_mode) == 25U);
 static_assert(offsetof(SentryInfoOffline, yaw_camerainit_to_gimbal) == 0U);
@@ -277,7 +268,8 @@ inline float YawRadToCamerainitDeg(float yaw_rad) {
 inline bool ChassisPayloadValid(LibXR::ConstRawData payload) {
   return payload.addr_ != nullptr &&
          payload.size_ == sizeof(HostDataLink::ChassisTarget) &&
-         static_cast<const uint8_t*>(payload.addr_)[40] <= 1U;
+         static_cast<const uint8_t*>(payload.addr_)
+             [offsetof(HostDataLink::ChassisTarget, use_speed_control)] <= 1U;
 }
 
 inline bool BehaviorPayloadValid(LibXR::ConstRawData payload) {
@@ -307,12 +299,7 @@ inline bool ChassisCommandValid(const HostDataLink::ChassisTarget& command) {
   for (float value : {command.vx_mps, command.vy_mps, command.wz_rad_s}) {
     if (!std::isfinite(value) || std::fabs(value) > SANITY_LIMIT) return false;
   }
-  return command.use_speed_control && std::isfinite(command.current_yaw) &&
-         std::isfinite(command.current_vx) &&
-         std::isfinite(command.current_vy) &&
-         std::isfinite(command.current_wz) &&
-         std::isfinite(command.delta_yaw) && command.fx == 0.0F &&
-         command.fy == 0.0F && command.mz == 0.0F;
+  return command.use_speed_control;
 }
 
 class ChassisCommandTracker {

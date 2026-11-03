@@ -21,10 +21,10 @@ int main() {
 
   std::array<uint8_t, sizeof(input)> bytes{};
   std::memcpy(bytes.data(), &input, bytes.size());
-  assert(bytes.size() == 45U && bytes[40] == 1U);
+  assert(bytes.size() == 13U && bytes[12] == 1U);
   assert(ChassisPayloadValid(LibXR::ConstRawData(bytes.data(), bytes.size())));
   assert(!ChassisPayloadValid(LibXR::ConstRawData(bytes.data(), 12U)));
-  bytes[40] = 2U;
+  bytes[12] = 2U;
   assert(!ChassisPayloadValid(LibXR::ConstRawData(bytes.data(), bytes.size())));
   assert(!ChassisPayloadValid(LibXR::ConstRawData(nullptr, bytes.size())));
 
@@ -64,9 +64,6 @@ int main() {
   input.use_speed_control = false;
   assert(!ChassisCommandValid(input));
   input.use_speed_control = true;
-  input.fx = 1.0F;
-  assert(!ChassisCommandValid(input));
-  input.fx = 0.0F;
   input.vx_mps = 33.0F;
   assert(!ChassisCommandValid(input));
   return 0;
