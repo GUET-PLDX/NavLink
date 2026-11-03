@@ -96,9 +96,18 @@ inline constexpr uint16_t REQUIRED_REFEREE_SOURCE_MASK =
 // ROS2_LIBXR wire payloads. Field order and one-byte packing are part of the
 // external contract; do not reorder or substitute integer widths.
 struct [[gnu::packed]] ChassisTarget {
-  float fx_n{};  /* chassis-frame force, N */
-  float fy_n{};  /* chassis-frame force, N */
-  float mz_nm{}; /* yaw torque, N*m */
+  float vx_mps{};      /* chassis-frame velocity, m/s */
+  float vy_mps{};      /* chassis-frame velocity, m/s */
+  float wz_rad_s{};    /* yaw rate, rad/s */
+  float current_yaw{}; /* legacy telemetry; unused by this receiver */
+  float current_vx{};
+  float current_vy{};
+  float current_wz{};
+  float fx{}; /* legacy force fields must be zero */
+  float fy{};
+  float mz{};
+  bool use_speed_control{};
+  float delta_yaw{};
 };
 
 struct [[gnu::packed]] BehaviorData {
@@ -200,7 +209,7 @@ struct [[gnu::packed]] GimbalFeedback {
 };
 
 static_assert(std::endian::native == std::endian::little);
-static_assert(sizeof(ChassisTarget) == 12U);
+static_assert(sizeof(ChassisTarget) == 45U);
 static_assert(sizeof(BehaviorData) == 26U);
 static_assert(sizeof(TeamInfo::AllyRobotStatus) == 11U);
 static_assert(sizeof(TeamInfo) == 48U);
@@ -211,7 +220,9 @@ static_assert(sizeof(EnemyRobotStatus) == 9U);
 static_assert(sizeof(RadarInfo) == 59U);
 static_assert(sizeof(GimbalFeedback) == 28U);
 static_assert(sizeof(GimbalFeedbackV1) == 12U);
-static_assert(offsetof(ChassisTarget, mz_nm) == 8U);
+static_assert(offsetof(ChassisTarget, wz_rad_s) == 8U);
+static_assert(offsetof(ChassisTarget, use_speed_control) == 40U);
+static_assert(offsetof(ChassisTarget, delta_yaw) == 41U);
 static_assert(offsetof(BehaviorData, ammo_purchase_request) == 11U);
 static_assert(offsetof(BehaviorData, use_gyro_mode) == 25U);
 static_assert(offsetof(SentryInfoOffline, yaw_camerainit_to_gimbal) == 0U);
@@ -236,7 +247,7 @@ namespace Pldx::HostDataLinkDetail {
 
 inline constexpr uint32_t COMMAND_TIMEOUT_MS = 150U;
 inline constexpr float CHASSIS_YAW_ALIGNMENT_TOLERANCE_RAD = 0.05F;
-inline constexpr uint32_t AUTO_CHASSIS_MODE_ROTOR = 2U;
+inline constexpr uint32_t AUTO_CHASSIS_MODE_ROTOR = 6U;
 inline constexpr uint32_t AUTO_CHASSIS_MODE_NAVIGATION = 4U;
 inline constexpr uint32_t FEEDBACK_OMEGA_TIMEOUT_MS = 50U;
 inline constexpr uint32_t FEEDBACK_FIELD_TIMEOUT_MS = 250U;
@@ -265,7 +276,8 @@ inline float YawRadToCamerainitDeg(float yaw_rad) {
 // Validate wire bool representations before copying bytes into C++ bools.
 inline bool ChassisPayloadValid(LibXR::ConstRawData payload) {
   return payload.addr_ != nullptr &&
-         payload.size_ == sizeof(HostDataLink::ChassisTarget);
+         payload.size_ == sizeof(HostDataLink::ChassisTarget) &&
+         static_cast<const uint8_t*>(payload.addr_)[40] <= 1U;
 }
 
 inline bool BehaviorPayloadValid(LibXR::ConstRawData payload) {
@@ -289,11 +301,18 @@ inline bool IsTunnelYawAligned(float chassis_yaw_rad, bool align_active,
 }
 
 inline bool ChassisCommandValid(const HostDataLink::ChassisTarget& command) {
-  constexpr float SANITY_LIMIT = 1000.0F;
-  for (float value : {command.fx_n, command.fy_n, command.mz_nm}) {
+  // The inter-board navigation format represents signed velocity in 0.001
+  // units.
+  constexpr float SANITY_LIMIT = 32.767F;
+  for (float value : {command.vx_mps, command.vy_mps, command.wz_rad_s}) {
     if (!std::isfinite(value) || std::fabs(value) > SANITY_LIMIT) return false;
   }
-  return true;
+  return command.use_speed_control && std::isfinite(command.current_yaw) &&
+         std::isfinite(command.current_vx) &&
+         std::isfinite(command.current_vy) &&
+         std::isfinite(command.current_wz) &&
+         std::isfinite(command.delta_yaw) && command.fx == 0.0F &&
+         command.fy == 0.0F && command.mz == 0.0F;
 }
 
 class ChassisCommandTracker {
@@ -444,6 +463,22 @@ bool DispatchDecision(const DecisionPublication& value, Sink& sink) {
 #include "mutex.hpp"
 #include "timebase.hpp"
 #include "timer.hpp"
+
+namespace Pldx::HostDataLinkDetail {
+inline CMD::Data MakeAIChassis(const HostDataLink::ChassisTarget& command,
+                               bool fresh) {
+  CMD::Data value{};
+  value.ctrl_source = CMD::ControlSource::CTRL_SOURCE_AI;
+  if (fresh) {
+    value.chassis.vx = command.vx_mps;
+    value.chassis.vy = command.vy_mps;
+    value.chassis.wz = command.wz_rad_s;
+    value.chassis_online = true;
+  }
+  return value;
+}
+}  // namespace Pldx::HostDataLinkDetail
+
 class HostDataLink {
  public:
   /// @brief 监控循环入口，由静态装配的监控循环调用。
@@ -731,16 +766,8 @@ class HostDataLink {
     offline_info_topic_.Publish(info);
   }
   CMD::Data BuildAI(LibXR::MillisecondTimestamp now) {
-    CMD::Data value{};
-    value.ctrl_source = CMD::ControlSource::CTRL_SOURCE_AI;
-    if (tracker_.CommandFresh(now)) {
-      value.chassis.fx_n = latest_chassis_.fx_n;
-      value.chassis.fy_n = latest_chassis_.fy_n;
-      value.chassis.mz_nm = latest_chassis_.mz_nm;
-      value.chassis.ff_valid = true;
-      value.chassis_online = true;
-    }
-    return value;
+    return Pldx::HostDataLinkDetail::MakeAIChassis(latest_chassis_,
+                                                   tracker_.CommandFresh(now));
   }
   void OnReferee(const Referee::RobotGameRefereePack& source) {
     const auto fresh = [&source](uint16_t required) {

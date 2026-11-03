@@ -6,9 +6,9 @@
 
 保留 PLDX 控制、协议、超时与离线保护。
 
-导航包保留 Fx/Fy/Mz 力协议，写入 `CMD::Data::chassis` 的 `fx_n/fy_n/mz_nm/ff_valid`；运动目标 `chassis.vx/vy/wz` 默认零。CMD 仲裁后发布复合底盘命令，Omni 将其叠加到速度反馈。非零速度轨迹需要上游补充速度目标。
+导航包使用 45 字节速度协议，`vx_mps/vy_mps/wz_rad_s` 为车体系速度和偏航角速度。有效速度命令写入 `CMD::Data::chassis.vx/vy/wz`，不启用力前馈。旧版 12 字节力报文不兼容；协议位、有限值、CAN 范围与未使用的力字段均会检查。
 
-控制输入回调在模块锁内缓存导航数据，行为回调继续分发模式候选及决策 Topic；这些接收路径不读写 CMD。构造时注册的输入回调由 `CMD::UpdateInputs()` 执行，在锁内聚合、释放锁后提交，通过 `FeedAIChassis` 只更新 AI 底盘分片。导航力按 150 ms 判定新鲜度。没有命令软件定时器。导航模式作为待选值发布，实际是否采用由 DualBoard 的一致控制结果决定。
+控制输入回调在模块锁内缓存导航数据并通过 `FeedAIChassis` 更新 AI 底盘分片；行为回调分发模式候选及决策 Topic。导航命令按 150 ms 判定新鲜度，失效或速度标志关闭时撤销 AI 底盘控制，CMD 按现有逻辑回退到遥控输入。导航普通模式和小陀螺模式分别使用物理速度 CAN 编码，实际是否采用由 DualBoard 的一致控制结果决定。
 
 视觉目标与开火改由 TalosLink 通过 `FeedAIGimbal` 提交；本模块不再订阅 `target_euler` / `fire_notify`。
 

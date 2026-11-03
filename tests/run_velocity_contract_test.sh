@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+test_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+module_dir="$(cd "${test_dir}/.." && pwd)"
+modules_root="$(dirname "${module_dir}")"
+workspace_root="${modules_root}"
+while [[ ! -d "${workspace_root}/Middlewares/Third_Party/LibXR" ]]; do
+  [[ "${workspace_root}" != / ]] || { echo 'LibXR workspace not found' >&2; exit 1; }
+  workspace_root="$(dirname "${workspace_root}")"
+done
+libxr_dir="${workspace_root}/Middlewares/Third_Party/LibXR"
+binary="$(mktemp "${TMPDIR:-/tmp}/host-velocity-contract.XXXXXX")"
+trap 'rm -f "${binary}"' EXIT
+includes=(-I"${module_dir}" -I"${modules_root}/DualBoard" -isystem "${libxr_dir}/system/linux"
+          -isystem "${libxr_dir}/lib/Eigen")
+while IFS= read -r directory; do includes+=(-isystem "${directory}"); done < <(find "${libxr_dir}/src" -type d)
+for module in CMD Chassis Motor PowerControl Referee RMMotor SuperPower; do
+  includes+=(-isystem "${modules_root}/${module}")
+done
+"${CXX:-c++}" -std=c++20 -Wall -Wextra -Werror -pedantic \
+  -DXR_LOG_MESSAGE_MAX_LEN=64 -DLIBXR_DEFAULT_SCALAR=double \
+  "${includes[@]}" "${test_dir}/velocity_contract_test.cpp" \
+  "${libxr_dir}/src/core/libxr_mem_o3.cpp" "${libxr_dir}/src/structure/list.cpp" \
+  "${libxr_dir}/system/linux/mutex.cpp" -pthread -o "${binary}"
+"${binary}"
+echo 'PASS: USB velocity contract, CAN modes, invalid inputs and watchdog'

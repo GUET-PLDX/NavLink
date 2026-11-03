@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check the configured owners and topics of the navigation force link."""
+"""Check the configured owners and topics of the navigation velocity link."""
 
 import re
 from pathlib import Path
@@ -46,12 +46,13 @@ def main():
     assert 'GUET-PLDX/HostDataLink' in [r.split('@')[0] if isinstance(r, str) else r['id'] for r in registry]
     source = (MODULE_ROOT / 'HostDataLink.hpp').read_text()
     assert 'navigation_velocity' not in source
-    for field in ('fx_n', 'fy_n', 'mz_nm'):
-        assert f'latest_chassis_.{field}' in source
-    assert 'value.chassis.ff_valid = true' in source
+    for field in ('vx_mps', 'vy_mps', 'wz_rad_s'):
+        assert f'command.{field}' in source
+    assert 'MakeAIChassis(latest_chassis_' in source
+    assert 'value.chassis.ff_valid = true' not in source
     assert 'chassis_ff_topic_' not in source
     assert source.index('tracker_.Observe(value, NOW)') < source.index('latest_chassis_ = value')
-    print('PASS: navigation force ownership and Talos visual link configuration')
+    print('PASS: navigation velocity ownership and Talos visual link configuration')
 
 
 if __name__ == '__main__':
