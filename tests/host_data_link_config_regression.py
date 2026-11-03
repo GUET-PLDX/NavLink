@@ -22,7 +22,7 @@ def main():
         return [re.search(r'\{"([^"]+)"\}', value).group(1)
                 for value in args(module_id)['topic_configs']]
 
-    assert modules['host_link']['module'] == 'GUET-PLDX/HostDataLink'
+    assert modules['host_link']['module'] == 'GUET-PLDX/NavLink'
     assert args('host_link')['cmd'] == 'cmd'
     assert 'uart' not in args('host_link')
     for module in modules.values():
@@ -43,7 +43,7 @@ def main():
     assert args('talos_link')['uart'] == 'usb_vision_cdc'
     assert all(m['module'] != 'GUET-PLDX/HostData' for m in modules.values())
     registry = yaml.safe_load((ROOT / 'Modules/modules.yaml').read_text())['modules']
-    assert 'GUET-PLDX/HostDataLink' in [r.split('@')[0] if isinstance(r, str) else r['id'] for r in registry]
+    assert 'GUET-PLDX/NavLink' in [r.split('@')[0] if isinstance(r, str) else r['id'] for r in registry]
     source = (MODULE_ROOT / 'HostDataLink.hpp').read_text()
     assert 'navigation_velocity' not in source
     for field in ('vx_mps', 'vy_mps', 'wz_rad_s'):
