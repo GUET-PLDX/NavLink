@@ -900,7 +900,7 @@ class NavLink {
   Pldx::HostDataLinkDetail::DecisionSequenceTracker decision_;
 };
 
-inline NavLink::HostDataLink(CMD& cmd, const char* referee_topic_name,
+inline NavLink::NavLink(CMD& cmd, const char* referee_topic_name,
                                   const char* pitch_topic_name,
                                   const char* yaw_topic_name,
                                   const char* quaternion_topic_name)
