@@ -44,7 +44,7 @@ def main():
     assert all(m['module'] != 'GUET-PLDX/HostData' for m in modules.values())
     registry = yaml.safe_load((ROOT / 'Modules/modules.yaml').read_text())['modules']
     assert 'GUET-PLDX/NavLink' in [r.split('@')[0] if isinstance(r, str) else r['id'] for r in registry]
-    source = (MODULE_ROOT / 'HostDataLink.hpp').read_text()
+    source = (MODULE_ROOT / 'NavLink.hpp').read_text()
     assert 'navigation_velocity' not in source
     for field in ('vx_mps', 'vy_mps', 'wz_rad_s'):
         assert f'command.{field}' in source
