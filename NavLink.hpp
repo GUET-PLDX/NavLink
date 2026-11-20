@@ -855,10 +855,12 @@ class NavLink {
 
   Pldx::HostDataLink::GimbalFeedback gimbal_feedback_{};
   LibXR::MillisecondTimestamp yaw_feedback_time_{}, pitch_feedback_time_{};
+  LibXR::MillisecondTimestamp mode_feedback_time_{};
   LibXR::MillisecondTimestamp vision_feedback_time_{};
   LibXR::MillisecondTimestamp launcher_feedback_time_{};
   uint8_t launcher_valid_flags_{};
   bool yaw_feedback_seen_{}, pitch_feedback_seen_{};
+  bool mode_feedback_seen_{};
   bool vision_feedback_seen_{}, launcher_feedback_seen_{};
   float yawmotor_angle_{};
   LibXR::MillisecondTimestamp yaw_omega_time_{};
