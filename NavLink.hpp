@@ -846,6 +846,35 @@ class NavLink {
    private:
     NavLink& owner_;
   };
+  Pldx::HostDataLink::ChassisTarget latest_chassis_{};
+  bool chassis_submitted_online_ = false;
+
+  bool tunnel_align_active_{};
+  float tunnel_align_angle_rad_{};
+  LibXR::MillisecondTimestamp behavior_time_{};
+
+  Pldx::HostDataLink::GimbalFeedback gimbal_feedback_{};
+  LibXR::MillisecondTimestamp yaw_feedback_time_{}, pitch_feedback_time_{};
+  LibXR::MillisecondTimestamp vision_feedback_time_{};
+  LibXR::MillisecondTimestamp launcher_feedback_time_{};
+  uint8_t launcher_valid_flags_{};
+  bool yaw_feedback_seen_{}, pitch_feedback_seen_{};
+  bool vision_feedback_seen_{}, launcher_feedback_seen_{};
+  float yawmotor_angle_{};
+  LibXR::MillisecondTimestamp yaw_omega_time_{};
+  LibXR::MillisecondTimestamp pitch_omega_time_{};
+  bool yaw_omega_seen_{};
+  bool pitch_omega_seen_{};
+  float chassis_imu_yaw_{};
+  bool chassis_imu_yaw_valid_{};
+  LibXR::MillisecondTimestamp chassis_yaw_time_{};
+  uint8_t capacitor_capacity_{};
+  bool capacitor_capacity_valid_{};
+  LibXR::MillisecondTimestamp capacitor_time_{};
+
+  Pldx::HostDataLinkDetail::ChassisCommandTracker tracker_;
+  Pldx::HostDataLinkDetail::DecisionSequenceTracker decision_;
+
   CMD* cmd_;
   LibXR::Mutex mutex_;
   LibXR::Topic chassis_topic_, behavior_topic_, team_info_topic_,
@@ -860,31 +889,6 @@ class NavLink {
       LibXR::Topic::CreateTopic<uint8_t>("sentry_remote_buy_hp_times")};
   LibXR::Topic resurrection_topic_{
       LibXR::Topic::CreateTopic<bool>("sentry_buy_resurrection")};
-  Pldx::HostDataLink::ChassisTarget latest_chassis_{};
-  bool chassis_submitted_online_ = false;
-  float yawmotor_angle_{};
-  LibXR::MillisecondTimestamp yaw_omega_time_{};
-  LibXR::MillisecondTimestamp pitch_omega_time_{};
-  bool yaw_omega_seen_{};
-  bool pitch_omega_seen_{};
-  float chassis_imu_yaw_{};
-  bool chassis_imu_yaw_valid_{};
-  LibXR::MillisecondTimestamp chassis_yaw_time_{};
-  uint8_t capacitor_capacity_{};
-  bool capacitor_capacity_valid_{};
-  LibXR::MillisecondTimestamp capacitor_time_{};
-  bool tunnel_align_active_{};
-  LibXR::MillisecondTimestamp behavior_time_{};
-  float tunnel_align_angle_rad_{};
-  Pldx::HostDataLink::GimbalFeedback gimbal_feedback_{};
-  LibXR::MillisecondTimestamp yaw_feedback_time_{}, pitch_feedback_time_{};
-  LibXR::MillisecondTimestamp mode_feedback_time_{}, vision_feedback_time_{};
-  LibXR::MillisecondTimestamp launcher_feedback_time_{};
-  uint8_t launcher_valid_flags_{};
-  bool yaw_feedback_seen_{}, pitch_feedback_seen_{}, mode_feedback_seen_{};
-  bool vision_feedback_seen_{}, launcher_feedback_seen_{};
-  Pldx::HostDataLinkDetail::ChassisCommandTracker tracker_;
-  Pldx::HostDataLinkDetail::DecisionSequenceTracker decision_;
 };
 
 inline NavLink::NavLink(CMD& cmd, const char* referee_topic_name,
