@@ -16,7 +16,6 @@ depends:
 #include <limits>
 #include <type_traits>
 
-#include "Lifter.hpp"
 #include "libxr_def.hpp"
 #include "libxr_mem.hpp"
 #include "libxr_time.hpp"
