@@ -13,3 +13,5 @@
 视觉目标与开火改由 TalosLink 通过 `FeedAIGimbal` 提交；本模块不再订阅 `target_euler` / `fire_notify`。
 
 `gimbal_feedback` 的字段有效位按字段独立计时，250 ms 未更新即清除；角速度仍使用 50 ms 窗口。反馈维护周期会在静默后补发清除后的 flags。`BehaviorData` 的购买/复活请求是独立累计计数器：接收端以首帧建立基线，某个计数下降视为该计数器重置并更新基线，该计数器本帧不生成事件。该兼容协议没有 session 标记，发送端重启后的首帧不会重放事件。
+
+`BehaviorData.desire_stance` 取值 `1–3` 时请求基础裁判姿态，未确认时最多每秒重发一次。`online_info.sentry_info_2` 的位 0–1 来自裁判 `0x020D` 的实际姿态，位 2 携带裁判机构状态。`desire_lifter_pos` 的 `TOP/BOTTOM` 请求发往 `lifter_target`，实际位置、能否切换及进度通过 `offline_info` 回传。
