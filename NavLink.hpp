@@ -240,6 +240,7 @@ inline constexpr uint32_t COMMAND_TIMEOUT_MS = 150U;
 inline constexpr float CHASSIS_YAW_ALIGNMENT_TOLERANCE_RAD = 0.05F;
 inline constexpr uint32_t AUTO_CHASSIS_MODE_ROTOR = 6U;
 inline constexpr uint32_t AUTO_CHASSIS_MODE_NAVIGATION = 4U;
+inline constexpr uint32_t AUTO_CHASSIS_MODE_HOLE = 7U;
 inline constexpr uint32_t FEEDBACK_OMEGA_TIMEOUT_MS = 50U;
 inline constexpr uint32_t FEEDBACK_FIELD_TIMEOUT_MS = 250U;
 
@@ -571,6 +572,7 @@ class NavLink {
     }
     if (tunnel_align_active_ && (now - behavior_time_).ToMillisecond() > 250U) {
       tunnel_align_active_ = false;
+      nav_chassis_mode_topic_.Publish(normal_nav_chassis_mode_);
       changed = true;
     }
     if (changed) PublishOffline();
@@ -580,8 +582,6 @@ class NavLink {
   void OnBehavior(const Pldx::HostDataLink::BehaviorData& value) {
     Pldx::HostDataLinkDetail::DecisionPublication publication;
     bool send_stance = false;
-    uint32_t chassis_mode =
-        Pldx::HostDataLinkDetail::AUTO_CHASSIS_MODE_NAVIGATION;
     {
       LibXR::Mutex::LockGuard lock(mutex_);
       publication = decision_.Decode(value);
@@ -600,14 +600,17 @@ class NavLink {
         send_stance = true;
       }
       PublishOffline();
-      chassis_mode =
+      normal_nav_chassis_mode_ =
           value.use_gyro_mode
               ? Pldx::HostDataLinkDetail::AUTO_CHASSIS_MODE_ROTOR
               : Pldx::HostDataLinkDetail::AUTO_CHASSIS_MODE_NAVIGATION;
+      uint32_t chassis_mode = tunnel_align_active_
+                                  ? Pldx::HostDataLinkDetail::AUTO_CHASSIS_MODE_HOLE
+                                  : normal_nav_chassis_mode_;
+      nav_chassis_mode_topic_.Publish(chassis_mode);
     }
     bool use_capacitor = value.use_capacitor;
     use_capacitor_topic_.Publish(use_capacitor);
-    nav_chassis_mode_topic_.Publish(chassis_mode);
     auto lifter_target =
         static_cast<Pldx::LifterPosition>(value.desire_lifter_pos);
     if (lifter_target == Pldx::LifterPosition::TOP ||
@@ -880,6 +883,8 @@ class NavLink {
 
   bool tunnel_align_active_{};
   float tunnel_align_angle_rad_{};
+  uint32_t normal_nav_chassis_mode_ =
+      Pldx::HostDataLinkDetail::AUTO_CHASSIS_MODE_NAVIGATION;
   LibXR::MillisecondTimestamp behavior_time_{};
   uint8_t referee_stance_{};
   LibXR::MillisecondTimestamp referee_stance_time_{};
