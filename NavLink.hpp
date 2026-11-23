@@ -587,8 +587,6 @@ class NavLink {
   void OnBehavior(const Pldx::HostDataLink::BehaviorData& value) {
     Pldx::HostDataLinkDetail::DecisionPublication publication;
     bool send_stance = false;
-    uint32_t chassis_mode =
-        Pldx::HostDataLinkDetail::AUTO_CHASSIS_MODE_NAVIGATION;
     {
       LibXR::Mutex::LockGuard lock(mutex_);
       publication = decision_.Decode(value);
@@ -596,7 +594,8 @@ class NavLink {
       tunnel_align_active_ = value.tunnel_align_active;
       tunnel_align_angle_rad_ = value.tunnel_align_angle_rad;
       behavior_time_ = Now();
-      const bool stance_matches = value.desire_stance == referee_stance_ &&
+      const bool stance_matches =
+          value.desire_stance == referee_stance_ &&
           (behavior_time_ - referee_stance_time_).ToMillisecond() <= 3000U;
       if (value.desire_stance >= 1U && value.desire_stance <= 3U &&
           !stance_matches &&
@@ -607,13 +606,13 @@ class NavLink {
         send_stance = true;
       }
       PublishOffline();
-      chassis_mode =
-          value.use_gyro_mode
-              ? Pldx::HostDataLinkDetail::AUTO_CHASSIS_MODE_ROTOR
-              : Pldx::HostDataLinkDetail::AUTO_CHASSIS_MODE_NAVIGATION;
     }
     bool use_capacitor = value.use_capacitor;
     use_capacitor_topic_.Publish(use_capacitor);
+    uint32_t chassis_mode =
+        value.use_gyro_mode
+            ? Pldx::HostDataLinkDetail::AUTO_CHASSIS_MODE_ROTOR
+            : Pldx::HostDataLinkDetail::AUTO_CHASSIS_MODE_NAVIGATION;
     nav_chassis_mode_topic_.Publish(chassis_mode);
     auto lifter_target =
         static_cast<Pldx::LifterPosition>(value.desire_lifter_pos);
@@ -716,8 +715,6 @@ class NavLink {
   void OnGimbalMode(const uint8_t& value) {
     LibXR::Mutex::LockGuard lock(mutex_);
     gimbal_feedback_.gimbal_mode = value;
-    mode_feedback_time_ = Now();
-    mode_feedback_seen_ = true;
     gimbal_feedback_.valid_flags |=
         Pldx::HostDataLink::FEEDBACK_GIMBAL_MODE_VALID;
     PublishGimbalFeedback();
@@ -738,7 +735,7 @@ class NavLink {
   }
   bool RefreshGimbalFeedback(LibXR::MillisecondTimestamp now) {
     const uint8_t previous = gimbal_feedback_.valid_flags;
-    uint8_t flags = 0U;
+    uint8_t flags = previous & Pldx::HostDataLink::FEEDBACK_GIMBAL_MODE_VALID;
     const auto fresh = [now](LibXR::MillisecondTimestamp seen, bool has_seen) {
       return has_seen &&
              (now - seen).ToMillisecond() <=
@@ -748,8 +745,6 @@ class NavLink {
       flags |= Pldx::HostDataLink::FEEDBACK_YAW_VALID;
     if (fresh(pitch_feedback_time_, pitch_feedback_seen_))
       flags |= Pldx::HostDataLink::FEEDBACK_PITCH_VALID;
-    if (fresh(mode_feedback_time_, mode_feedback_seen_))
-      flags |= Pldx::HostDataLink::FEEDBACK_GIMBAL_MODE_VALID;
     if (fresh(vision_feedback_time_, vision_feedback_seen_))
       flags |= Pldx::HostDataLink::FEEDBACK_VISION_TASK_VALID;
     if (fresh(launcher_feedback_time_, launcher_feedback_seen_))
@@ -909,12 +904,10 @@ class NavLink {
 
   Pldx::HostDataLink::GimbalFeedback gimbal_feedback_{};
   LibXR::MillisecondTimestamp yaw_feedback_time_{}, pitch_feedback_time_{};
-  LibXR::MillisecondTimestamp mode_feedback_time_{};
   LibXR::MillisecondTimestamp vision_feedback_time_{};
   LibXR::MillisecondTimestamp launcher_feedback_time_{};
   uint8_t launcher_valid_flags_{};
   bool yaw_feedback_seen_{}, pitch_feedback_seen_{};
-  bool mode_feedback_seen_{};
   bool vision_feedback_seen_{}, launcher_feedback_seen_{};
   float yawmotor_angle_{};
   LibXR::MillisecondTimestamp yaw_omega_time_{};
@@ -939,7 +932,8 @@ class NavLink {
       radar_info_topic_, gimbal_feedback_topic_, nav_chassis_mode_topic_,
       use_capacitor_topic_;
   LibXR::Topic lifter_target_topic_{
-      LibXR::Topic::FindOrCreate<Pldx::LifterPosition>(Pldx::LIFTER_TARGET_TOPIC)};
+      LibXR::Topic::FindOrCreate<Pldx::LifterPosition>(
+          Pldx::LIFTER_TARGET_TOPIC)};
   LibXR::Topic buy_bullet_topic_{
       LibXR::Topic::CreateTopic<uint16_t>("sentry_buy_bullet_num")};
   LibXR::Topic remote_bullet_topic_{
