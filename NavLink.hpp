@@ -787,9 +787,13 @@ class NavLink {
     {
       LibXR::Mutex::LockGuard lock(mutex_);
       referee_stance_ = fresh(Referee::SOURCE_SENTRY_INFO)
-                            ? source.sentry_info.current_state
+                            ? source.sentry_info.CurrentStance()
                             : 0U;
-      referee_stance_time_ = Now();
+      if (source.source_command_id ==
+          static_cast<uint16_t>(
+              Referee::CommandID::REF_CMD_ID_SENTRY_DECISION)) {
+        referee_stance_time_ = Now();
+      }
     }
     Pldx::HostDataLink::GameInfo game{};
     game.game_time_remaining = source.game_status.stage_remain_time;
@@ -814,23 +818,16 @@ class NavLink {
     online.sentry_pos_x = position_valid ? source.robot_pos.x : unavailable;
     online.sentry_pos_y = position_valid ? source.robot_pos.y : unavailable;
     online.speed_monitor_angle = position_valid ? source.robot_pos.angle : unavailable;
-    const auto& sentry = source.sentry_info;
-    online.sentry_info_1 = (sentry.exchanged_bullet_num & 0x7FFU) |
-                           ((sentry.exchanged_bullet_times & 0x0FU) << 11U) |
-                           ((sentry.exchanged_blood_times & 0x0FU) << 15U) |
-                           ((sentry.could_risen_free & 0x01U) << 19U) |
-                           ((sentry.could_risen_exchanged & 0x01U) << 20U) |
-                           ((sentry.risen_cost & 0x03FFU) << 21U);
-    online.sentry_info_2 =
-        static_cast<uint16_t>((sentry.current_state & 0x03U) |
-                              ((sentry.own_mech_state & 0x01U) << 2U));
-    // info_3 posture-buff timers are not present in the referee source.
+    if (fresh(Referee::SOURCE_SENTRY_INFO)) {
+      online.sentry_info_1 = source.sentry_info.info_1;
+      online.sentry_info_2 = source.sentry_info.info_2;
+      online.sentry_info_3 = source.sentry_info.info_3;
+    }
     online.energy_ratio = source.robot_buff.percent_100_remain_energy  ? 100U
                           : source.robot_buff.percent_50_remain_energy ? 50U
                                                                        : 0U;
     if (fresh(Referee::SOURCE_ROBOT_STATUS | Referee::SOURCE_BULLET_REMAIN |
-              Referee::SOURCE_POWER_HEAT | Referee::SOURCE_SENTRY_INFO |
-              Referee::SOURCE_ROBOT_BUFF))
+              Referee::SOURCE_POWER_HEAT | Referee::SOURCE_ROBOT_BUFF))
       online_info_topic_.Publish(online);
 
     const uint8_t id = source.robot_status.robot_id;
