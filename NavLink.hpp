@@ -6,6 +6,7 @@ module_description: ROS2_LIBXR navigation link protocol and host endpoint
 depends:
 - id: GUET-PLDX/CMD
 - id: GUET-PLDX/Referee
+  ref: 4eb967e28d76bfb3004ddb03a565b10741f1d888
 === END MANIFEST === */
 // clang-format on
 
@@ -136,13 +137,15 @@ struct [[gnu::packed]] TeamInfo {
 struct [[gnu::packed]] GameInfo {
   uint16_t game_time_remaining{};
   uint16_t coin_remaining{};
-  uint32_t event_code{};
+  uint64_t event_code{};
   uint8_t game_status{};
   float manual_point_x{};
   float manual_point_y{};
   uint8_t manual_key{};
   uint16_t enemy_outpost_hp{};
   uint16_t enemy_base_hp{};
+  uint16_t ally_control_degree{};
+  uint16_t enemy_control_degree{};
 };
 
 struct [[gnu::packed]] SentryInfoOnline {
@@ -157,7 +160,7 @@ struct [[gnu::packed]] SentryInfoOnline {
   uint32_t sentry_info_1{};
   uint16_t sentry_info_2{};
   uint64_t sentry_info_3{};
-  uint8_t energy_ratio{};
+  uint8_t energy_ratio{255U}; /* unavailable in 2027; 255 is unknown */
 };
 
 struct [[gnu::packed]] SentryInfoOffline {
@@ -205,7 +208,11 @@ static_assert(sizeof(ChassisTarget) == 13U);
 static_assert(sizeof(BehaviorData) == 26U);
 static_assert(sizeof(TeamInfo::AllyRobotStatus) == 11U);
 static_assert(sizeof(TeamInfo) == 48U);
-static_assert(sizeof(GameInfo) == 22U);
+static_assert(sizeof(GameInfo) == 30U);
+static_assert(offsetof(GameInfo, event_code) == 4U);
+static_assert(offsetof(GameInfo, enemy_outpost_hp) == 22U);
+static_assert(offsetof(GameInfo, ally_control_degree) == 26U);
+static_assert(offsetof(GameInfo, enemy_control_degree) == 28U);
 static_assert(sizeof(SentryInfoOnline) == 37U);
 static_assert(sizeof(SentryInfoOffline) == 16U);
 static_assert(sizeof(EnemyRobotStatus) == 9U);
@@ -789,9 +796,10 @@ class NavLink {
       referee_stance_ = fresh(Referee::SOURCE_SENTRY_INFO)
                             ? source.sentry_info.CurrentStance()
                             : 0U;
-      if (source.source_command_id ==
-          static_cast<uint16_t>(
-              Referee::CommandID::REF_CMD_ID_SENTRY_DECISION)) {
+      if (fresh(Referee::SOURCE_SENTRY_INFO) &&
+          source.source_command_id ==
+              static_cast<uint16_t>(
+                  Referee::CommandID::REF_CMD_ID_SENTRY_DECISION)) {
         referee_stance_time_ = Now();
       }
     }
@@ -801,10 +809,18 @@ class NavLink {
     game.game_status = static_cast<uint8_t>(source.game_status.game_progress);
     LibXR::Memory::FastCopy(&game.event_code, &source.field_event,
                             sizeof(game.event_code));
-    game.enemy_outpost_hp = source.robot_hp.enemy_outpost_hp;
+    const uint8_t id = source.robot_status.robot_id;
+    const bool blue = id >= 101U && id <= 111U;
+    const bool ids_valid = blue || (id >= 1U && id <= 11U);
+    game.enemy_outpost_hp =
+        blue ? source.robot_hp.r_outpost_hp : source.robot_hp.b_outpost_hp;
     game.enemy_base_hp = source.robot_hp.enemy_base_hp;
-    if (fresh(Referee::SOURCE_GAME_STATUS | Referee::SOURCE_BULLET_REMAIN |
-              Referee::SOURCE_FIELD_EVENT | Referee::SOURCE_ROBOT_HP))
+    game.ally_control_degree = source.robot_hp.ally_control_degree;
+    game.enemy_control_degree = source.robot_hp.enemy_control_degree;
+    if (ids_valid &&
+        fresh(Referee::SOURCE_GAME_STATUS | Referee::SOURCE_BULLET_REMAIN |
+              Referee::SOURCE_FIELD_EVENT | Referee::SOURCE_ROBOT_HP |
+              Referee::SOURCE_ROBOT_STATUS))
       game_info_topic_.Publish(game);
 
     Pldx::HostDataLink::SentryInfoOnline online{};
@@ -817,22 +833,19 @@ class NavLink {
     const bool position_valid = fresh(Referee::SOURCE_ROBOT_POS);
     online.sentry_pos_x = position_valid ? source.robot_pos.x : unavailable;
     online.sentry_pos_y = position_valid ? source.robot_pos.y : unavailable;
-    online.speed_monitor_angle = position_valid ? source.robot_pos.angle : unavailable;
+    online.speed_monitor_angle =
+        position_valid ? source.robot_pos.angle : unavailable;
     if (fresh(Referee::SOURCE_SENTRY_INFO)) {
       online.sentry_info_1 = source.sentry_info.info_1;
       online.sentry_info_2 = source.sentry_info.info_2;
       online.sentry_info_3 = source.sentry_info.info_3;
     }
-    online.energy_ratio = source.robot_buff.percent_100_remain_energy  ? 100U
-                          : source.robot_buff.percent_50_remain_energy ? 50U
-                                                                       : 0U;
+    // The 2027 0x0204 payload no longer carries energy percentage.
+    online.energy_ratio = 255U;
     if (fresh(Referee::SOURCE_ROBOT_STATUS | Referee::SOURCE_BULLET_REMAIN |
-              Referee::SOURCE_POWER_HEAT | Referee::SOURCE_ROBOT_BUFF))
+              Referee::SOURCE_POWER_HEAT))
       online_info_topic_.Publish(online);
 
-    const uint8_t id = source.robot_status.robot_id;
-    const bool blue = id >= 101U && id <= 199U;
-    const bool ids_valid = blue || (id >= 1U && id <= 99U);
     if (fresh(Referee::SOURCE_ROBOT_HP | Referee::SOURCE_SENTRY_POS |
               Referee::SOURCE_ROBOT_STATUS) &&
         ids_valid) {
@@ -841,17 +854,25 @@ class NavLink {
                               static_cast<uint8_t>(blue ? 102U : 2U),
                               static_cast<uint8_t>(blue ? 103U : 3U),
                               static_cast<uint8_t>(blue ? 104U : 4U)};
-      const uint16_t hp[4] = {
-          source.robot_hp.ally_1_robot_hp, source.robot_hp.ally_2_robot_hp,
-          source.robot_hp.ally_3_robot_hp, source.robot_hp.ally_4_robot_hp};
-      const float xy[8] = {
-          source.sentry_pos.hero_x,       source.sentry_pos.hero_y,
-          source.sentry_pos.engineer_x,   source.sentry_pos.engineer_y,
-          source.sentry_pos.standard_3_x, source.sentry_pos.standard_3_y,
-          source.sentry_pos.standard_4_x, source.sentry_pos.standard_4_y};
-      for (size_t i = 0; i < 4; ++i)
+      const uint16_t hp[4] = {source.robot_hp.ally_1_robot_hp, 0U,
+                              source.robot_hp.ally_3_robot_hp,
+                              source.robot_hp.ally_4_robot_hp};
+      const float xy[8] = {source.sentry_pos.hero_x,
+                           source.sentry_pos.hero_y,
+                           0.0f,
+                           0.0f,
+                           source.sentry_pos.standard_3_x,
+                           source.sentry_pos.standard_3_y,
+                           source.sentry_pos.standard_4_x,
+                           source.sentry_pos.standard_4_y};
+      for (size_t i = 0; i < 4; ++i) {
+        // The former engineer HP word is reserved in 2027. Keep this wire slot
+        // empty rather than inventing a robot with zero or reserved HP.
+        if (i == 1U) continue;
         info.ally_status[i] = {ids[i], hp[i], xy[2 * i], xy[2 * i + 1]};
-      info.outpost_hp = source.robot_hp.ally_outpost_hp;
+      }
+      info.outpost_hp =
+          blue ? source.robot_hp.b_outpost_hp : source.robot_hp.r_outpost_hp;
       info.base_hp = source.robot_hp.ally_base_hp;
       team_info_topic_.Publish(info);
     }
