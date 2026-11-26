@@ -5,6 +5,7 @@
 module_description: ROS2_LIBXR navigation link protocol and host endpoint
 depends:
 - id: GUET-PLDX/CMD
+  ref: 923ca3823980650c5ee28a2181c53448d7489183
 - id: GUET-PLDX/Referee
   ref: 4eb967e28d76bfb3004ddb03a565b10741f1d888
 === END MANIFEST === */
@@ -547,23 +548,40 @@ class NavLink {
     RegisterCallback<Data, Method>(topic);
   }
   void OnChassis(const Pldx::HostDataLink::ChassisTarget& value) {
-    LibXR::Mutex::LockGuard lock(mutex_);
-    const auto NOW = Now();
-    if (tracker_.Observe(value, NOW)) {
-      latest_chassis_ = value;
-      chassis_submitted_online_ = true;
-      cmd_->FeedAIChassis(BuildAI(NOW));
-    } else if (chassis_submitted_online_) {
-      chassis_submitted_online_ = false;
-      cmd_->FeedAIChassis(BuildAI(NOW));
+    LibXR::Mutex::LockGuard submit_lock(chassis_submit_mutex_);
+    CMD::Data data{};
+    bool submit = false;
+    {
+      LibXR::Mutex::LockGuard lock(mutex_);
+      const auto NOW = Now();
+      if (tracker_.Observe(value, NOW)) {
+        latest_chassis_ = value;
+        chassis_submitted_online_ = true;
+        submit = true;
+      } else if (chassis_submitted_online_) {
+        chassis_submitted_online_ = false;
+        submit = true;
+      }
+      if (submit) data = BuildAI(NOW);
     }
+    if (submit) cmd_->FeedAIChassis(data);
   }
   void CheckChassisTimeout() {
-    LibXR::Mutex::LockGuard lock(mutex_);
-    if (chassis_submitted_online_ && !tracker_.CommandFresh(Now())) {
-      chassis_submitted_online_ = false;
-      cmd_->FeedAIChassis(BuildAI(Now()));
+    LibXR::Mutex::LockGuard submit_lock(chassis_submit_mutex_);
+    CMD::Data data{};
+    bool submit = false;
+    {
+      LibXR::Mutex::LockGuard lock(mutex_);
+      const auto now = Now();
+      if (chassis_submitted_online_ && !tracker_.CommandFresh(now)) {
+        chassis_submitted_online_ = false;
+        data = BuildAI(now);
+        submit = true;
+      }
     }
+    if (submit) cmd_->FeedAIChassis(data);
+
+    LibXR::Mutex::LockGuard lock(mutex_);
     const auto now = Now();
     bool changed = false;
     if (chassis_imu_yaw_valid_ &&
@@ -926,6 +944,8 @@ class NavLink {
   Pldx::HostDataLinkDetail::DecisionSequenceTracker decision_;
 
   CMD* cmd_;
+  /* 先取得提交锁，再取得状态锁；调用 CMD 时释放状态锁。 */
+  LibXR::Mutex chassis_submit_mutex_;
   LibXR::Mutex mutex_;
   LibXR::Topic chassis_topic_, behavior_topic_, team_info_topic_,
       game_info_topic_, online_info_topic_, offline_info_topic_,
