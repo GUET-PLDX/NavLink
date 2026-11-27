@@ -35,7 +35,7 @@ def main():
     assert topics('navigation_rx') == ['nav_data', 'behavior_data']
     assert topics('navigation_tx') == [
         'team_info', 'game_info', 'online_info', 'offline_info', 'radar_info',
-        'chassis_feedback',
+        'chassis_feedback', 'nav_yaw_joint',
     ]
     assert args('navigation_tx')['slot_count'] > 0
     assert modules['talos_link']['module'] == 'GUET-PLDX/TalosLink'
